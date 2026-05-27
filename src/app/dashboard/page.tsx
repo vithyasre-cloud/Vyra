@@ -192,8 +192,8 @@ const chatEndRef = useRef<HTMLDivElement>(null);
 
 
          const finalRoom =
-           invitedRoom ||
-           "vyra-private";
+  invitedRoom ||
+  `solo-${u.uid}`;
 
 
          setRoomId(finalRoom);
