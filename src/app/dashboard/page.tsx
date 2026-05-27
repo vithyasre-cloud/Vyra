@@ -345,33 +345,29 @@ if (!users.includes(u.email)) {
        setMessages(data);
 
 
-       data.forEach(
-         async (msg: any) => {
-
-
-           if (
-             msg.sender !==
-               user?.email &&
-             !msg.seen
-           ) {
-
-
-             await updateDoc(
-               doc(
-                 db,
-                 "rooms",
-                 roomId,
-                 "messages",
-                 msg.id
-               ),
-               {
-                 seen: true,
-               }
-             );
-           }
-         }
-       );
-     });
+      ```tsx
+data.forEach(
+  async (msg: any) => {
+    if (
+      msg.sender !== user?.email &&
+      !msg.seen
+    ) {
+      await updateDoc(
+        doc(
+          db,
+          "rooms",
+          roomId,
+          "messages",
+          msg.id
+        ),
+        {
+          seen: true,
+        }
+      );
+    }
+  }
+);
+```
 
 
    return () => unsub();
