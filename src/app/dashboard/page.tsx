@@ -221,11 +221,6 @@ const chatEndRef = useRef<HTMLDivElement>(null);
          }
 
 
-         if (
-           !users.includes(u.email)
-         ) {
-
-
 if (!users.includes(u.email)) {
 
   // 🚫 LOCK ROOM AFTER 2 USERS
@@ -345,7 +340,7 @@ if (!users.includes(u.email)) {
        setMessages(data);
 
 
-      ```tsx
+      
 data.forEach(
   async (msg: any) => {
     if (
@@ -367,8 +362,7 @@ data.forEach(
     }
   }
 );
-```
-
+});
 
    return () => unsub();
 
@@ -1267,80 +1261,84 @@ const startGame = () => {
              </p>
 
 
-             {editingId ===
-             msg.id ? (
+{editingId === msg.id ? (
 
+  <div className="flex flex-col gap-2">
 
-               <div className="flex flex-col gap-2">
+    <input
+      value={editingText}
+      onChange={(e) =>
+        setEditingText(e.target.value)
+      }
+      className="p-2 rounded-lg text-black"
+    />
 
-
-                 <input
-                   value={
-                     editingText
-                   }
-                   onChange={(e) =>
-                     setEditingText(
-                       e.target
-                         .value
-                     )
-                   }
-                   className="p-2 rounded-lg text-black"
-                 />
-
-
-                 <button
-                   onClick={() =>
-                     saveEdit(
-                       msg.id
-                     )
-                   }
-                   className="bg-green-500 p-2 rounded-lg"
-                 >
-                   Save
-                 </button>
-
-
-               </div>
-
-) : (
-  <>
- {msg.isGift && !msg.opened ? (
-  <div
-    onClick={async () => {
-      await updateDoc(
-        doc(
-          db,
-          "rooms",
-          roomId,
-          "messages",
-          msg.id
-        ),
-        {
-          opened: true,
-        }
-      );
-    }}
-    className="p-4 rounded-2xl bg-gradient-to-r from-pink-500 to-yellow-500 text-center shadow-lg cursor-pointer animate-pulse"
-  >
-    <div className="text-4xl">🎁</div>
-
-    <p className="font-bold mt-2">
-      Tap to open surprise
-    </p>
-  </div>
-) : (
-  msg.text && (
-    <p
-      onClick={() => setPuzzleMode(!puzzleMode)}
-      className="cursor-pointer"
+    <button
+      onClick={() =>
+        saveEdit(msg.id)
+      }
+      className="bg-green-500 p-2 rounded-lg"
     >
-      {puzzleMode
-        ? msg.text
-        : scramble(msg.text)}
-    </p>
-  )
-)}
+      Save
+    </button>
+
+  </div>
+
+) : (
+
+  <>
+
+    {msg.isGift && !msg.opened ? (
+
+      <div
+        onClick={async () => {
+          await updateDoc(
+            doc(
+              db,
+              "rooms",
+              roomId,
+              "messages",
+              msg.id
+            ),
+            {
+              opened: true,
+            }
+          );
+        }}
+        className="p-4 rounded-2xl bg-gradient-to-r from-pink-500 to-yellow-500 text-center shadow-lg cursor-pointer animate-pulse"
+      >
+
+        <div className="text-4xl">
+          🎁
+        </div>
+
+        <p className="font-bold mt-2">
+          Tap to open surprise
+        </p>
+
+      </div>
+
+    ) : (
+
+      msg.text && (
+
+        <p
+          onClick={() =>
+            setPuzzleMode(!puzzleMode)
+          }
+          className="cursor-pointer"
+        >
+          {puzzleMode
+            ? msg.text
+            : scramble(msg.text)}
+        </p>
+
+      )
+
+    )}
+
   </>
+
 )}
 
 
