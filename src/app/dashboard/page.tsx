@@ -39,6 +39,7 @@ import {
  Pencil,
  Pin,
  LogOut,
+ MoreVertical,
 } from "lucide-react";
 
 
@@ -51,7 +52,8 @@ export default function DashboardPage() {
 
  const [messages, setMessages] =
    useState<any[]>([]);
-
+const [unreadCount, setUnreadCount] =
+  useState(0);
 
  const [user, setUser] =
    useState<any>(null);
@@ -71,6 +73,8 @@ const [isRoomLocked, setIsRoomLocked] = useState(false);
    useState("⚫ Offline");
 const [sharedStatus, setSharedStatus] =
   useState("💤 Waiting for connection...");
+  const [lastSeenText, setLastSeenText] =
+  useState("");
   const [sharedSong, setSharedSong] = useState<string | null>(null);
 
  const [fileUrl, setFileUrl] =
@@ -95,6 +99,11 @@ const [sharedStatus, setSharedStatus] =
 
  const [editingId, setEditingId] =
    useState("");
+   const [myNickname, setMyNickname] =
+  useState("");
+
+const [partnerNickname, setPartnerNickname] =
+  useState("");
 
 
  const [editingText, setEditingText] =
@@ -111,6 +120,7 @@ const [sharedStatus, setSharedStatus] =
 
  const [showPinned, setShowPinned] =
    useState(false);
+   const [showMenu, setShowMenu] = useState(false);
 const [showEmoji, setShowEmoji] = useState(false);
 
 const emojis = ["😂", "❤️", "🔥", "👍", "😭", "😈", "🥶", "💀", "✨", "🥳"];
@@ -132,6 +142,7 @@ const scramble = (text: string) => {
  const fileRef =
    useRef<HTMLInputElement>(null);
 const chatEndRef = useRef<HTMLDivElement>(null);
+const lastMessageCount = useRef(0);
 
  const mediaRecorderRef =
    useRef<any>(null);
@@ -261,7 +272,26 @@ if (!users.includes(u.email)) {
          );
        }
      );
+window.addEventListener(
+  "beforeunload",
+  async () => {
 
+    if (!auth.currentUser?.email) return;
+
+    await setDoc(
+      doc(
+        db,
+        "status",
+        auth.currentUser.email
+      ),
+      {
+        online: false,
+        lastSeen: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+);
 
    return () => unsub();
 
@@ -270,43 +300,90 @@ if (!users.includes(u.email)) {
 
 
  // ONLINE STATUS
- useEffect(() => {
+useEffect(() => {
+  if (!roomId || !user?.email) return;
 
+  const roomRef = doc(db, "rooms", roomId);
 
-   if (!user?.email)
-     return;
+  const loadPartnerStatus = async () => {
+    const roomSnap = await getDoc(roomRef);
 
+    if (!roomSnap.exists()) return;
 
-   const unsub =
-     onSnapshot(
-       doc(
-         db,
-         "status",
-         user.email
-       ),
-       (snap) => {
+    const users = roomSnap.data().users || [];
 
+    const partner = users.find(
+      (u: string) => u !== user.email
+    );
 
-         const data =
-           snap.data();
+    if (!partner) return;
 
+    return onSnapshot(
+      doc(db, "status", partner),
+      (snap) => {
+        const data = snap.data();
 
-        if (data?.online) {
-  setOnlineStatus("🟢 Online");
-  setSharedStatus("✨ Both online = glowing vibe");
-} else {
-  setOnlineStatus("⚫ Offline");
-  setSharedStatus("💤 Waiting for connection...");
-}
-       }
-     );
+        if (!data) return;
 
+        if (data.online) {
+          setOnlineStatus("🟢 Online");
+        } else {
+          setOnlineStatus("🕒 Last seen recently");
+        }
+      }
+    );
+  };
 
-   return () => unsub();
+  let unsubscribePartner: any;
 
+  loadPartnerStatus().then((unsub) => {
+    unsubscribePartner = unsub;
+  });
 
- }, [user]);
+  return () => {
+    if (unsubscribePartner)
+      unsubscribePartner();
+  };
+}, [roomId, user]);
+useEffect(() => {
 
+  if (!roomId || !user?.email)
+    return;
+
+  return onSnapshot(
+    doc(db, "rooms", roomId),
+    (snap) => {
+
+      const data =
+        snap.data();
+
+      if (!data) return;
+
+      const users =
+        data.users || [];
+
+      const nicknames =
+        data.nicknames || {};
+
+      const partner =
+        users.find(
+          (u: string) =>
+            u !== user.email
+        );
+
+      setMyNickname(
+        partner
+          ? nicknames[partner] || ""
+          : ""
+      );
+
+      setPartnerNickname(
+        nicknames[user.email] ||
+          ""
+      );
+    }
+  );
+}, [roomId, user]);
 
  // LOAD MESSAGES
  useEffect(() => {
@@ -416,6 +493,56 @@ data.forEach(
 
 
  }, [roomId, user]);
+ useEffect(() => {
+  if (!user?.email) return;
+
+  const handleVisibility = async () => {
+    await setDoc(
+      doc(db, "status", user.email),
+      {
+        online:
+          document.visibilityState === "visible",
+        lastSeen: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  };
+handleVisibility();
+  document.addEventListener(
+    "visibilitychange",
+    handleVisibility
+  );
+
+  return () => {
+    document.removeEventListener(
+      "visibilitychange",
+      handleVisibility
+    );
+  };
+}, [user]);
+useEffect(() => {
+  const handleFocus = () => {
+    setUnreadCount(0);
+  };
+
+  window.addEventListener(
+    "focus",
+    handleFocus
+  );
+
+  return () => {
+    window.removeEventListener(
+      "focus",
+      handleFocus
+    );
+  };
+}, []);
+useEffect(() => {
+  document.title =
+    unreadCount > 0
+      ? `(${unreadCount}) Vyra`
+      : "Vyra";
+}, [unreadCount]);
 const previousMessageCount = useRef(0);
 
 useEffect(() => {
@@ -425,8 +552,25 @@ useEffect(() => {
     });
   }
 
+  // 🔔 Play sound for new incoming messages
+if (
+  messages.length > lastMessageCount.current &&
+  messages[messages.length - 1]?.sender !== user?.email
+) {
+  notificationSound.current?.play();
+
+  if (
+    document.visibilityState !== "visible"
+  ) {
+    setUnreadCount(
+      (prev) => prev + 1
+    );
+  }
+}
+
+  lastMessageCount.current = messages.length;
   previousMessageCount.current = messages.length;
-}, [messages]);
+}, [messages, user]);
    // CLOUDINARY
  const uploadFile =
    async (
@@ -603,6 +747,7 @@ const createPrivateRoom = async () => {
     {
       roomName: finalRoomName,
       users: [user.email],
+      nicknames: {},
       locked: false,
       createdBy: user.email,
       createdAt: serverTimestamp(),
@@ -856,13 +1001,19 @@ const startGame = () => {
     msg.text?.toLowerCase().includes(search.toLowerCase())
   );
 }, [messages, search]);
+// 🔔 Sound Effect
+const notificationSound = useRef<HTMLAudioElement | null>(null);
+
+useEffect(() => {
+  notificationSound.current = new Audio("/sounds/message.mp3");
+}, []);
 
 
  return (
 
 
    <main
-     className={`h-screen flex flex-col transition-all ${
+  className={`h-screen w-full overflow-x-hidden flex flex-col transition-all ${
        darkMode
          ? "bg-black text-white"
          : "bg-white text-black"
@@ -871,8 +1022,8 @@ const startGame = () => {
 
 
      {/* HEADER */}
-     <header className="p-4 border-b border-white/10 flex justify-between items-center">
-
+     <header className="p-4 border-b border-white/10 flex flex-col md:flex-row justify-between items-center gap-4">
+<div className="flex flex-col md:flex-row gap-2 items-center">
 
        <div className="flex items-center gap-3">
 
@@ -892,9 +1043,11 @@ const startGame = () => {
          <div>
 
 
-           <h1 className="text-2xl font-bold">
-             Vyra
-           </h1>
+           <h1 className="text-xl font-bold">
+  {partnerNickname || "You"}
+  {" 💖 "}
+  {myNickname || "Partner"}
+</h1>
 
 
            <p className="text-green-400 text-sm">
@@ -921,132 +1074,148 @@ const startGame = () => {
        </div>
 
 
-       <div className="flex gap-2 items-center">
-       <input
-  value={roomName}
-  onChange={(e) =>
-    setRoomName(e.target.value)
-  }
-  placeholder="Room Name 💖"
-  className="px-3 py-2 rounded-xl bg-white/10 outline-none w-40"
-/>
-       <button
-  onClick={createPrivateRoom}
-  className="bg-cyan-500 text-black px-3 py-2 rounded-xl font-semibold"
+<div className="relative">
+
+  <button
+    onClick={() =>
+      setShowMenu(!showMenu)
+    }
+    className="p-2 rounded-full bg-white/10"
+  >
+    <MoreVertical size={22} />
+  </button>
+
+  {showMenu && (
+    <div className="absolute right-0 top-12 bg-zinc-900 border border-white/10 rounded-xl w-52 p-2 z-50 flex flex-col">
+
+      <button
+        onClick={() => {
+          setShowPinned(!showPinned);
+          setShowMenu(false);
+        }}
+        className="text-left px-3 py-2 hover:bg-white/10 rounded-lg"
+      >
+        📌 Pinned Messages
+      </button>
+
+      <button
+        onClick={() => {
+          startGame();
+          setShowMenu(false);
+        }}
+        className="text-left px-3 py-2 hover:bg-white/10 rounded-lg"
+      >
+        🎮 Play Game
+      </button>
+
+      <button
+        onClick={() => {
+          setShowEmoji(!showEmoji);
+          setShowMenu(false);
+        }}
+        className="text-left px-3 py-2 hover:bg-white/10 rounded-lg"
+      >
+        😊 Emoji Picker
+      </button>
+
+      <button
+        onClick={() => {
+          setDarkMode(!darkMode);
+          setShowMenu(false);
+        }}
+        className="text-left px-3 py-2 hover:bg-white/10 rounded-lg"
+      >
+        {darkMode ? "☀️ Light Mode" : "🌙 Dark Mode"}
+      </button>
+<button
+  onClick={() => {
+    const name = prompt("Room Name 💖");
+
+    if (!name) return;
+
+    setRoomName(name);
+
+    setTimeout(() => {
+      createPrivateRoom();
+    }, 100);
+  }}
+  className="text-left px-3 py-2 hover:bg-white/10 rounded-lg"
 >
   🔐 Create Room
 </button>
 
-<div className="flex gap-2 items-center">
-  <input
-    value={joinRoomInput}
-    onChange={(e) =>
-      setJoinRoomInput(e.target.value)
-    }
-    placeholder="VYRA-XXXX"
-    className="px-3 py-2 rounded-xl bg-white/10 outline-none w-36"
-  />
-
-  <button
-    onClick={joinPrivateRoom}
-    className="bg-green-500 px-3 py-2 rounded-xl"
-  >
-    Join
-  </button>
-</div>
-
-
-         <button
-           onClick={() =>
-             setShowPinned(
-               !showPinned
-             )
-           }
-           className="bg-yellow-500 text-black px-3 py-2 rounded-xl font-semibold"
-         >
-           📌 Pinned
-         </button>
 <button
-  onClick={startGame}
-  className="bg-purple-500 text-white px-3 py-2 rounded-xl"
+  onClick={() => {
+    const code = prompt("Enter Room Code");
+
+    if (!code) return;
+
+    setJoinRoomInput(code);
+
+    setTimeout(() => {
+      joinPrivateRoom();
+    }, 100);
+  }}
+  className="text-left px-3 py-2 hover:bg-white/10 rounded-lg"
 >
-  🎮 Game
+  🚪 Join Room
 </button>
+<button
+  onClick={async () => {
 
-         <label className="bg-white/10 p-2 rounded-xl cursor-pointer">
+    const nickname =
+      prompt(
+        "What do you call your partner? 💖"
+      );
 
+    if (!nickname) return;
 
-           📷
+    const roomSnap =
+      await getDoc(
+        doc(
+          db,
+          "rooms",
+          roomId
+        )
+      );
 
+    const current =
+      roomSnap.data()?.nicknames || {};
 
-           <input
-             type="file"
-             hidden
-             accept="image/*"
-             onChange={async (e) => {
+    await setDoc(
+      doc(
+        db,
+        "rooms",
+        roomId
+      ),
+      {
+        nicknames: {
+          ...current,
+          [user.email]:
+            nickname,
+        },
+      },
+      { merge: true }
+    );
+  }}
+  className="text-left px-3 py-2 hover:bg-white/10 rounded-lg"
+>
+  🏷 Set Partner Nickname
+</button>
+      <button
+        onClick={async () => {
+          await signOut(auth);
+          window.location.href = "/login";
+        }}
+        className="text-left px-3 py-2 hover:bg-red-500 rounded-lg"
+      >
+        🚪 Logout
+      </button>
 
+    </div>
+  )}
 
-               const file =
-                 e.target.files?.[0];
-
-
-               if (!file) return;
-
-
-               const url =
-                 await uploadFile(file);
-
-
-               setProfilePic(url);
-
-
-               localStorage.setItem(
-                 "vyra-profile-pic",
-                 url
-               );
-             }}
-           />
-
-
-         </label>
-
-
-         <button
-           onClick={() =>
-             setDarkMode(
-               !darkMode
-             )
-           }
-           className="bg-white/10 p-2 rounded-xl"
-         >
-
-
-           {darkMode
-             ? <Sun />
-             : <Moon />}
-
-
-         </button>
-
-
-         <button
-           onClick={async () => {
-
-
-             await signOut(auth);
-
-
-             window.location.href =
-               "/login";
-           }}
-           className="bg-red-500 p-2 rounded-xl"
-         >
-
-
-           <LogOut />
-
-
-         </button>
+</div>
 
 
        </div>
@@ -1220,7 +1389,7 @@ const startGame = () => {
 
            <div
              key={msg.id}
-             className={`max-w-xs p-3 rounded-2xl ${
+             className={`max-w-[85%] md:max-w-xs p-3 rounded-2xl break-words ${
                msg.sender ===
                user?.email
                  ? "ml-auto bg-pink-500"
@@ -1256,9 +1425,16 @@ const startGame = () => {
   </div>
 )}
 
-             <p className="text-xs opacity-70 mb-2">
-               {msg.sender}
-             </p>
+             <p className="text-[10px] opacity-50 mb-2">
+  {msg.createdAt?.toDate
+    ? msg.createdAt
+        .toDate()
+        .toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+    : ""}
+</p>
 
 
 {editingId === msg.id ? (
@@ -1373,20 +1549,28 @@ const startGame = () => {
                  />
                </audio>
              )}
-                           {msg.sender ===
-               user?.email && (
+<div className="flex justify-between items-center mt-2 text-xs opacity-70">
 
+  <span>
+    {msg.createdAt?.toDate
+      ? msg.createdAt
+          .toDate()
+          .toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+      : ""}
+  </span>
 
-               <p className="text-xs mt-2 opacity-70">
+  {msg.sender === user?.email && (
+    <span>
+      {msg.seen
+        ? "✓✓ Seen"
+        : "✓ Sent"}
+    </span>
+  )}
 
-
-                 {msg.seen
-                   ? "✓✓ Seen"
-                   : "✓ Sent"}
-
-
-               </p>
-             )}
+</div>
 
 
              {msg.reaction && (
@@ -1500,6 +1684,11 @@ const startGame = () => {
 
      {/* INPUT */}
      <footer className="p-4 border-t border-white/10 flex flex-col gap-3">
+     {typingUser && (
+  <p className="text-xs text-purple-400 px-2">
+    ✍️ {typingUser} is typing...
+  </p>
+)}
 
 {showEmoji && (
   <div className="flex flex-wrap gap-2 p-2 bg-white/10 rounded-xl">
